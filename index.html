@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Гонки по трафику</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&family=Unbounded:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  /* Макет: узкая колонка. Сверху панель со счётом и скоростью, под ней
+     вертикальное поле 5:8 (дорога), снизу подсказка или кнопки на телефоне. */
+  :root {
+    --bg: #0b0e13;
+    --panel: #141923;
+    --line: #232b3a;
+    --text: #e9e7e1;
+    --muted: #8791a3;
+    --accent: #ffb020;
+    --accent-ink: #2a1a00;
+    --danger: #ff5d5d;
+    --shoulder: #0d1512;
+    --road: #1a1f29;
+    --edge: #d8d5cc;
+    --dash: #e9e7e1;
+    --lamp: #ffcf70;
+    --font-display: "Unbounded", "Trebuchet MS", system-ui, sans-serif;
+    --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --reserve: 200px;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* игровое поле и кнопки не должны выделяться при удержании */
+  .game, .game * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 15px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .game {
+    width: min(100%, max(320px, calc((100vh - var(--reserve)) * 0.625)));
+    width: min(100%, max(320px, calc((100svh - var(--reserve)) * 0.625)));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 10px 12px 10px 16px;
+  }
+  .bar h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .stats { display: flex; gap: 16px; margin-left: auto; }
+  .stat { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .stat span {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat b {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .icon-btn {
+    font: inherit;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    flex: none;
+  }
+  .icon-btn:hover { border-color: var(--muted); }
+
+  .board {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 5 / 8;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 2px solid var(--line);
+    background: var(--road);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(6, 8, 12, 0.6);
+  }
+  .overlay[hidden] { display: none; }
+  .card {
+    width: min(100%, 300px);
+    text-align: center;
+    background: var(--panel);
+    border: 2px solid var(--accent);
+    border-radius: 20px;
+    padding: 22px 18px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card[data-tone="over"] { border-color: var(--danger); }
+  .card[data-tone="pause"] { border-color: var(--muted); }
+  .card h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-wrap: balance;
+  }
+  .card[data-tone="over"] h2 { color: var(--danger); }
+  .card[data-tone="pause"] h2 { color: var(--text); }
+  .card p { margin: 0; line-height: 1.45; }
+  .card .lead { font-weight: 700; }
+  .card .hint { font-size: 13px; color: var(--muted); }
+
+  .btn {
+    font: inherit;
+    font-weight: 700;
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 20px;
+    cursor: pointer;
+    background: var(--accent);
+    color: var(--accent-ink);
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px) scale(0.98); }
+  .btn:focus-visible, .icon-btn:focus-visible, .pad button:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 3px;
+  }
+
+  .keys { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  kbd {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+  }
+
+  .pad { display: none; gap: 8px; }
+  .pad button {
+    flex: 1;
+    height: 58px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 16px;
+    font-size: 20px;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .pad button:active { background: var(--line); }
+  .pad .gas { color: var(--accent); }
+
+  @media (hover: none) and (pointer: coarse) {
+    :root { --reserve: 250px; }
+    .pad { display: flex; }
+    .keys { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+  }
+</style>
+
+</head>
+<body>
+<main class="game">
+  <header class="bar">
+    <h1>Трафик</h1>
+    <div class="stats">
+      <div class="stat"><span>Счёт</span><b id="score">0</b></div>
+      <div class="stat"><span>Км/ч</span><b id="speed">0</b></div>
+      <div class="stat"><span>Рекорд</span><b id="best">0</b></div>
+    </div>
+    <button class="icon-btn" id="pause-btn" type="button" aria-label="Пауза">❚❚</button>
+  </header>
+
+  <section class="board" id="board" aria-label="Дорога">
+    <canvas id="canvas"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="card" id="card" data-tone="start">
+        <h2 id="ov-title">Трафик</h2>
+        <p class="lead" id="ov-lead">Веди точку и обгоняй вплотную</p>
+        <p class="hint" id="ov-hint">Очки дают только близкие обгоны: чем ближе к машине, тем больше.</p>
+        <button class="btn" id="ov-btn" type="button">Поехали</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="pad" aria-label="Управление">
+    <button type="button" data-act="left" aria-label="Точка влево">◀</button>
+    <button type="button" data-act="brake" aria-label="Тормоз">▼</button>
+    <button type="button" class="gas" data-act="gas" aria-label="Газ">▲</button>
+    <button type="button" data-act="right" aria-label="Точка вправо">▶</button>
+  </div>
+
+  <p class="keys">
+    <kbd>←</kbd><kbd>→</kbd> или <kbd>A</kbd><kbd>D</kbd> — двигают точку, машина едет за ней ·
+    <kbd>↑</kbd> газ · <kbd>↓</kbd> тормоз · <kbd>Пробел</kbd> — пауза
+  </p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Настройки ----------
+  var W = 400, H = 640;            // логический размер поля, дальше всё рисуем в этих координатах
+  var LANES = 5, ROAD_X = 25, LANE_W = 70;
+  var K = 3.2;                     // сколько пикселей в секунду даёт 1 км/ч разницы скоростей
+  var LANE_SPEED = [86, 76, 66, 58, 50];  // скорость трафика по полосам: левая быстрее
+  var PW = 40, PH = 70, PY = 500;  // размеры и положение машины игрока
+  var COMBO_TIME = 2.5;            // секунд на следующий обгон, чтобы цепочка не прервалась
+  var NEAR = 28;                   // зазор между машинами (в пикселях поля), дальше которого очки не дают
+  var DOT_SPEED = 300;             // как быстро точка бегает по оси X, пикселей в секунду
+  var RAIL_Y = 590;                // высота рельсы с точкой
+  var DOT_MIN = ROAD_X + PW / 2 + 4, DOT_MAX = ROAD_X + LANES * LANE_W - PW / 2 - 4;
+  var BEST_KEY = "traffic-best";
+  var TRAFFIC_COLORS = ["#5b8def", "#dfe3ea", "#ef6a6a", "#8b93a5", "#4ec3a5", "#b58cf0"];
+
+  // ---------- Цвета из CSS ----------
+  var css = getComputedStyle(document.documentElement);
+  function tok(n) { return css.getPropertyValue(n).trim(); }
+  var COL = {
+    shoulder: tok("--shoulder"), road: tok("--road"), edge: tok("--edge"), dash: tok("--dash"),
+    lamp: tok("--lamp"), accent: tok("--accent"), danger: tok("--danger"), bg: tok("--bg")
+  };
+
+  // ---------- Элементы ----------
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $("canvas"), ctx = canvas.getContext("2d");
+  var boardEl = $("board"), overlay = $("overlay"), card = $("card");
+  var scoreEl = $("score"), speedEl = $("speed"), bestEl = $("best"), pauseBtn = $("pause-btn");
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------- Рекорд ----------
+  function loadBest() { try { return parseInt(localStorage.getItem(BEST_KEY), 10) || 0; } catch (e) { return 0; } }
+  function saveBest(v) { try { localStorage.setItem(BEST_KEY, String(v)); } catch (e) { /* хранилище недоступно */ } }
+
+  // ---------- Состояние ----------
+  var state = "ready";             // ready | running | paused | crash | over
+  var best = loadBest();
+  var dot, px, tilt, v, t, scroll = 0;   // dot — точка на оси X, px — где сейчас машина
+  var cars, floats, parts;
+  var score, overtakes, combo, comboT, spawnT, crashT, shake, newRecord;
+  var keys = { up: false, down: false, left: false, right: false };
+
+  function laneX(l) { return ROAD_X + LANE_W * (l + 0.5); }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function reset() {
+    dot = px = laneX(2); tilt = 0;
+    v = 100; t = 0;
+    cars = []; floats = []; parts = [];
+    score = 0; overtakes = 0; combo = 0; comboT = 0;
+    spawnT = 0.5; crashT = 0; shake = 0; newRecord = false;
+    updateHud();
+  }
+
+  function start() { reset(); setState("running"); }
+
+  function setState(s) {
+    state = s;
+    pauseBtn.textContent = s === "paused" ? "▶" : "❚❚";
+    renderOverlay();
+  }
+
+  function togglePause() {
+    if (state === "running") setState("paused");
+    else if (state === "paused") setState("running");
+  }
+
+  function updateHud() {
+    scoreEl.textContent = score;
+    speedEl.textContent = state === "ready" ? 0 : Math.round(v);
+    bestEl.textContent = best;
+  }
+
+  function renderOverlay() {
+    var title = $("ov-title"), lead = $("ov-lead"), hint = $("ov-hint"), btn = $("ov-btn");
+    overlay.hidden = state === "running" || state === "crash";
+    if (state === "ready") {
+      card.dataset.tone = "start";
+      title.textContent = "Трафик";
+      lead.textContent = "Веди точку и обгоняй вплотную";
+      hint.textContent = "Очки дают только близкие обгоны: чем ближе к машине, тем больше.";
+      btn.textContent = "Поехали";
+    } else if (state === "paused") {
+      card.dataset.tone = "pause";
+      title.textContent = "Пауза";
+      lead.textContent = "Счёт: " + score;
+      hint.textContent = "Пробел — продолжить, R — заново";
+      btn.textContent = "Продолжить";
+    } else if (state === "over") {
+      card.dataset.tone = "over";
+      title.textContent = "Авария";
+      lead.textContent = "Счёт: " + score + (newRecord ? " · новый рекорд!" : "");
+      hint.textContent = "Обгонов вплотную: " + overtakes + " · рекорд: " + best;
+      btn.textContent = "Ещё раз";
+    }
+  }
+
+  // ---------- Трафик ----------
+  function spawnCar() {
+    // не больше 3 занятых полос в верхней части, чтобы всегда оставался проезд
+    var occupied = {}, n = 0;
+    cars.forEach(function (c) { if (c.y < 300 && !occupied[c.lane]) { occupied[c.lane] = 1; n++; } });
+    if (n >= 3) return false;
+    var free = [];
+    for (var l = 0; l < LANES; l++) {
+      var busy = cars.some(function (c) { return c.lane === l && c.y - c.h / 2 < 60; });
+      if (!busy) free.push(l);
+    }
+    if (!free.length) return false;
+    var l2 = free[Math.floor(Math.random() * free.length)];
+    var truck = l2 >= 3 && Math.random() < 0.25;
+    var h = truck ? 110 : 70;
+    cars.push({
+      lane: l2, x: laneX(l2), y: -h, w: truck ? 46 : 40, h: h, truck: truck,
+      s: LANE_SPEED[l2],                       // в одной полосе скорость одинакова, поэтому машины не сталкиваются
+      color: truck ? "#c9ced8" : TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)],
+      passed: false,
+      minGap: Infinity     // самый маленький зазор до нашей машины за время обгона
+    });
+    return true;
+  }
+
+  // ---------- Обновление ----------
+  function update(dt) {
+    t += dt;
+
+    // скорость игрока: сама растёт со временем, газ и тормоз меняют её
+    var base = 110 + Math.min(t, 150) * (90 / 150);
+    var target = base;
+    if (keys.up) target += 35;
+    if (keys.down) target = Math.max(95, base - 35);
+    v += (target - v) * Math.min(1, 2.2 * dt);
+    scroll += v * K * dt;
+
+    // точка на оси X: двигаем её стрелками, машина плавно едет за ней
+    dot = clamp(dot + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * DOT_SPEED * dt, DOT_MIN, DOT_MAX);
+    var prev = px;
+    px += (dot - px) * (1 - Math.exp(-16 * dt));
+    tilt = clamp((px - prev) / Math.max(dt, 0.001) * 0.0016, -0.28, 0.28);
+
+    // новые машины
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      var interval = (1.0 - 0.5 * Math.min(t / 150, 1)) * rand(0.8, 1.2);
+      spawnT = spawnCar() ? interval : 0.15;
+    }
+
+    // машины, обгоны, столкновения
+    for (var i = cars.length - 1; i >= 0; i--) {
+      var c = cars[i];
+      c.y += (v - c.s) * K * dt;
+      if (c.y > H + 160 || c.y < -400) { cars.splice(i, 1); continue; }
+
+      // зазор между краями машин; запоминаем самый маленький, пока машины рядом по вертикали
+      var gap = Math.abs(c.x - px) - (c.w + PW) / 2;
+      if (Math.abs(c.y - PY) < (c.h + PH) / 2) c.minGap = Math.min(c.minGap, gap);
+
+      // обгон закончен, когда машина целиком осталась позади
+      if (!c.passed && c.y - c.h / 2 > PY + PH / 2) {
+        c.passed = true;
+        var gp = c.minGap;
+        var pts = gp < 10 ? 300 : gp < 20 ? 200 : gp <= NEAR ? 100 : 0;   // чем ближе, тем больше
+        var fx = clamp(px, 60, W - 60);
+        if (pts) {
+          combo = comboT > 0 ? Math.min(5, combo + 1) : 1;
+          comboT = COMBO_TIME;
+          pts *= combo;
+          score += pts; overtakes++;
+          floats.push({ x: fx, y: PY - 50, text: "+" + pts + (combo > 1 ? " ×" + combo : ""),
+            sub: gp < 10 ? "ВПРИТЫК" : gp < 20 ? "близко" : "рядом", life: 1, color: COL.accent });
+          updateHud();
+        } else {
+          floats.push({ x: fx, y: PY - 50, text: "0", sub: "далеко", life: 0.8, color: "#8791a3" });
+        }
+      }
+
+      if (Math.abs(c.x - px) < (c.w + PW) / 2 - 6 && Math.abs(c.y - PY) < (c.h + PH) / 2 - 6) {
+        return crash(c);
+      }
+    }
+
+    if (comboT > 0) { comboT -= dt; if (comboT <= 0) { comboT = 0; combo = 0; } }
+    speedEl.textContent = Math.round(v);
+  }
+
+  function crash(c) {
+    state = "crash";
+    crashT = 0.9;
+    shake = reduceMotion ? 0 : 1;
+    var cx = (px + c.x) / 2, cy = (PY + c.y) / 2;
+    for (var i = 0; i < 26; i++) {
+      var a = Math.random() * Math.PI * 2, sp = rand(80, 360);
+      parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, max: rand(0.4, 0.9), size: rand(1.5, 3.5), color: "#ffb020", smoke: false });
+    }
+    for (var j = 0; j < 10; j++) {
+      parts.push({ x: cx + rand(-14, 14), y: cy + rand(-14, 14), vx: rand(-40, 40), vy: rand(-90, -20), life: 1, max: rand(0.8, 1.4), size: rand(8, 16), color: "#8791a3", smoke: true });
+    }
+    if (score > best) { best = score; newRecord = true; saveBest(best); }
+    updateHud();
+    renderOverlay();
+  }
+
+  function updateCrash(dt) {
+    crashT -= dt;
+    shake = Math.max(0, shake - dt * 2.5);
+    v = Math.max(0, v - 220 * dt);
+    scroll += v * K * dt;
+    tilt += 2.2 * dt;
+    cars.forEach(function (c) { c.y += (v - c.s) * K * dt; });
+    speedEl.textContent = Math.round(v);
+    if (crashT <= 0) setState("over");
+  }
+
+  function updateFx(dt) {
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.life -= dt / p.max;
+      if (p.life <= 0) parts.splice(i, 1);
+    }
+    for (var j = floats.length - 1; j >= 0; j--) {
+      var f = floats[j];
+      f.y -= 40 * dt; f.life -= dt * 0.9;
+      if (f.life <= 0) floats.splice(j, 1);
+    }
+  }
+
+  // ---------- Отрисовка ----------
+  var cw = 1, ch = 1;
+  function resize() {
+    var r = boardEl.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    cw = Math.max(1, Math.round(r.width * dpr));
+    ch = Math.max(1, Math.round(r.height * dpr));
+    canvas.width = cw; canvas.height = ch;
+  }
+
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function lamp(x, y) {
+    var g = ctx.createRadialGradient(x, y, 0, x, y, 70);
+    g.addColorStop(0, "rgba(255,207,112,0.16)");
+    g.addColorStop(1, "rgba(255,207,112,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - 70, y - 70, 140, 140);
+    ctx.fillStyle = COL.lamp;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+  }
+
+  function drawRoad() {
+    ctx.fillStyle = COL.shoulder;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    var rw = LANES * LANE_W;
+    ctx.fillStyle = COL.road;
+    ctx.fillRect(ROAD_X, -20, rw, H + 40);
+    ctx.fillStyle = COL.edge;
+    ctx.fillRect(ROAD_X - 2, -20, 3, H + 40);
+    ctx.fillRect(ROAD_X + rw - 1, -20, 3, H + 40);
+
+    ctx.fillStyle = COL.dash;
+    ctx.globalAlpha = 0.75;
+    var period = 72, off = scroll % period;
+    for (var l = 1; l < LANES; l++) {
+      var x = ROAD_X + l * LANE_W - 1.5;
+      for (var y = -period + off; y < H; y += period) ctx.fillRect(x, y, 3, 36);
+    }
+    ctx.globalAlpha = 1;
+
+    var lp = 170, lo = scroll % lp;
+    for (var yy = -lp + lo; yy < H + lp; yy += lp) { lamp(11, yy); lamp(W - 11, yy); }
+  }
+
+  function drawCar(x, y, w, h, color, truck, rot, player) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    rr(-w / 2 + 3, -h / 2 + 5, w, h, 10); ctx.fill();
+
+    ctx.fillStyle = "#07090c";                                  // колёса
+    var wy = h * (truck ? 0.3 : 0.26);
+    [[-w / 2 - 2, -wy], [w / 2 - 4, -wy], [-w / 2 - 2, wy], [w / 2 - 4, wy]].forEach(function (p) {
+      rr(p[0], p[1] - 8, 6, 16, 2); ctx.fill();
+    });
+
+    ctx.fillStyle = color;                                      // кузов
+    rr(-w / 2, -h / 2, w, h, 10); ctx.fill();
+
+    if (truck) {
+      ctx.fillStyle = "#e9ecf1";                                // прицеп
+      rr(-w / 2 + 2, -h / 2 + h * 0.3, w - 4, h * 0.68, 5); ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.12)";
+      for (var k = 1; k < 5; k++) ctx.fillRect(-w / 2 + 4, -h / 2 + h * 0.3 + k * h * 0.12, w - 8, 2);
+      ctx.fillStyle = "#10151d";
+      rr(-w / 2 + 6, -h / 2 + 8, w - 12, h * 0.12, 4); ctx.fill();
+    } else {
+      ctx.fillStyle = "#10151d";                                // лобовое и заднее стекло
+      rr(-w / 2 + 5, -h * 0.24, w - 10, h * 0.16, 4); ctx.fill();
+      rr(-w / 2 + 6, h * 0.13, w - 12, h * 0.12, 4); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.14)";                 // крыша
+      rr(-w / 2 + 5, -h * 0.07, w - 10, h * 0.2, 5); ctx.fill();
+    }
+
+    ctx.fillStyle = player ? "#fff6d6" : "#d9d4bd";             // фары спереди
+    rr(-w / 2 + 3, -h / 2 + 1, 9, 4, 2); ctx.fill();
+    rr(w / 2 - 12, -h / 2 + 1, 9, 4, 2); ctx.fill();
+
+    ctx.shadowColor = "#ff3b3b";                                // стоп-сигналы сзади
+    ctx.shadowBlur = player ? 14 : 8;
+    ctx.fillStyle = "#ff4545";
+    rr(-w / 2 + 3, h / 2 - 5, 9, 4, 2); ctx.fill();
+    rr(w / 2 - 12, h / 2 - 5, 9, 4, 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function draw(now) {
+    var s = cw / W;
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.save();
+    if (shake > 0) ctx.translate(rand(-1, 1) * shake * 7, rand(-1, 1) * shake * 7);
+
+    drawRoad();
+
+    // свет фар игрока
+    var topY = PY - PH / 2;
+    var g = ctx.createLinearGradient(0, topY, 0, topY - 210);
+    g.addColorStop(0, "rgba(255,236,190,0.24)");
+    g.addColorStop(1, "rgba(255,236,190,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(px - 14, topY); ctx.lineTo(px + 14, topY);
+    ctx.lineTo(px + 64, topY - 210); ctx.lineTo(px - 64, topY - 210);
+    ctx.closePath(); ctx.fill();
+
+    // ось X: рельса внизу и нить от точки к машине
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ROAD_X + 10, RAIL_Y); ctx.lineTo(ROAD_X + LANES * LANE_W - 10, RAIL_Y); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    for (var li = 0; li < LANES; li++) ctx.fillRect(laneX(li) - 1, RAIL_Y - 4, 2, 8);
+    ctx.strokeStyle = "rgba(255,176,32,0.3)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(dot, RAIL_Y); ctx.lineTo(px, PY + PH / 2); ctx.stroke();
+
+    cars.forEach(function (c) { drawCar(c.x, c.y, c.w, c.h, c.color, c.truck, 0, false); });
+    drawCar(px, PY, PW, PH, COL.accent, false, tilt, true);
+
+    // сама точка-руль
+    ctx.fillStyle = "rgba(255,176,32,0.22)";
+    ctx.beginPath(); ctx.arc(dot, RAIL_Y, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = COL.accent;
+    ctx.beginPath(); ctx.arc(dot, RAIL_Y, 7, 0, 7); ctx.fill();
+
+    parts.forEach(function (p) {
+      ctx.globalAlpha = Math.max(0, p.life) * (p.smoke ? 0.5 : 1);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.smoke ? p.size * (2 - p.life) : p.size * p.life, 0, 7);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // дальность: верх дороги плавно уходит в темноту
+    var fade = ctx.createLinearGradient(0, 0, 0, 170);
+    fade.addColorStop(0, COL.bg);
+    fade.addColorStop(1, "rgba(11,14,19,0)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(-20, -20, W + 40, 190);
+
+    // всплывающие очки
+    ctx.textAlign = "center";
+    ctx.font = "700 17px Unbounded, system-ui, sans-serif";
+    floats.forEach(function (f) {
+      ctx.globalAlpha = Math.min(1, f.life * 1.6);
+      ctx.fillStyle = f.color;
+      ctx.font = "700 17px Unbounded, system-ui, sans-serif";
+      ctx.fillText(f.text, f.x, f.y);
+      if (f.sub) {
+        ctx.font = "700 10px Manrope, system-ui, sans-serif";
+        ctx.fillText(f.sub.toUpperCase(), f.x, f.y - 21);
+      }
+    });
+    ctx.globalAlpha = 1;
+
+    // комбо
+    if (combo > 1 && state === "running") {
+      ctx.font = "800 13px Unbounded, system-ui, sans-serif";
+      ctx.fillStyle = COL.accent;
+      ctx.fillText("КОМБО ×" + combo, W / 2, 30);
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      rr(W / 2 - 50, 38, 100, 5, 2.5); ctx.fill();
+      ctx.fillStyle = COL.accent;
+      rr(W / 2 - 50, 38, 100 * (comboT / COMBO_TIME), 5, 2.5); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ---------- Цикл ----------
+  var last = 0;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000 || 0);
+    last = now;
+    if (state === "running") update(dt);
+    else if (state === "crash") updateCrash(dt);
+    else if (state === "ready") scroll += 70 * K * dt;
+    updateFx(dt);
+    draw(now);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Ввод ----------
+  // игра стартует по первому нажатию управления
+  function wake() { if (state === "ready") start(); }
+
+  var KEY_LEFT = { ArrowLeft: 1, KeyA: 1 }, KEY_RIGHT = { ArrowRight: 1, KeyD: 1 };
+  var KEY_UP = { ArrowUp: 1, KeyW: 1 }, KEY_DOWN = { ArrowDown: 1, KeyS: 1 };
+
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var c = e.code;
+    if (KEY_LEFT[c]) { e.preventDefault(); keys.left = true; wake(); }
+    else if (KEY_RIGHT[c]) { e.preventDefault(); keys.right = true; wake(); }
+    else if (KEY_UP[c]) { e.preventDefault(); keys.up = true; if (state === "ready") start(); }
+    else if (KEY_DOWN[c]) { e.preventDefault(); keys.down = true; }
+    else if (c === "Space") {
+      e.preventDefault();
+      if (state === "ready" || state === "over") start(); else togglePause();
+    } else if (c === "Enter") {
+      if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+      if (state === "ready" || state === "over") start(); else if (state === "paused") togglePause();
+    } else if (c === "KeyP") togglePause();
+    else if (c === "KeyR") start();
+  });
+  document.addEventListener("keyup", function (e) {
+    if (KEY_UP[e.code]) keys.up = false;
+    if (KEY_DOWN[e.code]) keys.down = false;
+    if (KEY_LEFT[e.code]) keys.left = false;
+    if (KEY_RIGHT[e.code]) keys.right = false;
+  });
+  window.addEventListener("blur", function () { keys.up = keys.down = keys.left = keys.right = false; });
+
+  $("ov-btn").addEventListener("click", function () {
+    if (state === "paused") togglePause(); else start();
+  });
+  pauseBtn.addEventListener("click", function () {
+    if (state === "ready" || state === "over") start(); else togglePause();
+  });
+
+  // кнопки на телефоне
+  document.querySelectorAll(".pad button").forEach(function (b) {
+    var act = b.dataset.act;
+    b.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      if (act === "left") { keys.left = true; wake(); }
+      else if (act === "right") { keys.right = true; wake(); }
+      else if (act === "gas") { keys.up = true; if (state === "ready") start(); }
+      else if (act === "brake") keys.down = true;
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+      b.addEventListener(ev, function () {
+        if (act === "gas") keys.up = false;
+        if (act === "brake") keys.down = false;
+        if (act === "left") keys.left = false;
+        if (act === "right") keys.right = false;
+      });
+    });
+  });
+
+  // перетаскивание по полю пальцем или мышью: точка двигается вслед за движением
+  var dragX = 0, dragDot = 0, dragging = false;
+  boardEl.addEventListener("pointerdown", function (e) { dragging = true; dragX = e.clientX; dragDot = dot; });
+  boardEl.addEventListener("pointermove", function (e) {
+    if (!dragging || state !== "running") return;
+    var k = W / boardEl.getBoundingClientRect().width;        // из пикселей экрана в координаты поля
+    dot = clamp(dragDot + (e.clientX - dragX) * k * 1.6, DOT_MIN, DOT_MAX);
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+    boardEl.addEventListener(ev, function () { dragging = false; });
+  });
+
+  // долгое нажатие на телефоне не открывает контекстное меню
+  document.querySelector(".game").addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && state === "running") setState("paused");
+  });
+
+  // ---------- Старт ----------
+  new ResizeObserver(resize).observe(boardEl);
+  resize();
+  reset();
+  renderOverlay();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
