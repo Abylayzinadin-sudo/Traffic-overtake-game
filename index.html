@@ -1,0 +1,1469 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Гонки по трафику</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700&family=Unbounded:wght@600;800&display=swap" rel="stylesheet">
+<style>
+  /* Макет: узкая колонка. Сверху панель со счётом, скоростью и монетами, под ней
+     вертикальное поле 5:8 (дорога), снизу подсказка или кнопки на телефоне.
+     Меню, гараж и итоги аварии показываются карточкой поверх дороги. */
+  :root {
+    --bg: #0b0e13;
+    --panel: #141923;
+    --line: #232b3a;
+    --text: #e9e7e1;
+    --muted: #8791a3;
+    --accent: #ffb020;
+    --accent-ink: #2a1a00;
+    --danger: #ff5d5d;
+    --good: #5fd4a0;
+    --shoulder: #0d1512;
+    --road: #1a1f29;
+    --edge: #d8d5cc;
+    --dash: #e9e7e1;
+    --lamp: #ffcf70;
+    --font-display: "Unbounded", "Trebuchet MS", system-ui, sans-serif;
+    --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --reserve: 200px;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+
+  /* игровое поле и кнопки не должны выделяться при удержании */
+  .game, .game * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 15px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .game {
+    width: min(100%, max(320px, calc((100vh - var(--reserve)) * 0.625)));
+    width: min(100%, max(320px, calc((100svh - var(--reserve)) * 0.625)));
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--panel);
+    border-radius: 16px;
+    padding: 10px 12px 10px 16px;
+  }
+  .stats { display: flex; gap: 14px; flex: 1; justify-content: space-between; min-width: 0; }
+  .stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+  .stat span {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat b {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .icon-btn {
+    font: inherit;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    flex: none;
+  }
+  .icon-btn:hover { border-color: var(--muted); }
+
+  .coin {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffe9a8, var(--accent) 62%, #b87400);
+    box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25);
+  }
+
+  .board {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 5 / 8;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 2px solid var(--line);
+    background: var(--road);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    padding: 14px;
+    background: rgba(6, 8, 12, 0.66);
+  }
+  .overlay[hidden] { display: none; }
+  .card {
+    width: min(100%, 300px);
+    margin: auto;
+    text-align: center;
+    background: var(--panel);
+    border: 2px solid var(--accent);
+    border-radius: 20px;
+    padding: 22px 18px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .card[data-tone="over"] { border-color: var(--danger); }
+  .card[data-tone="pause"] { border-color: var(--muted); }
+  .card h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-wrap: balance;
+  }
+  .card[data-tone="over"] h2 { color: var(--danger); }
+  .card[data-tone="pause"] h2 { color: var(--text); }
+  .card p { margin: 0; line-height: 1.45; }
+  .card .lead { font-weight: 700; }
+  .card .hint { font-size: 13px; color: var(--muted); }
+
+  .reward {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 14px;
+  }
+  .reward b { font-family: var(--font-display); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .reward span { color: var(--muted); font-size: 12.5px; }
+
+  .btn {
+    font: inherit;
+    font-weight: 700;
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 20px;
+    cursor: pointer;
+    background: var(--accent);
+    color: var(--accent-ink);
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px) scale(0.98); }
+  .btn:disabled { opacity: 0.4; cursor: default; filter: none; transform: none; }
+  .btn.equipped { background: transparent; color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); opacity: 1; }
+
+  .btn:focus-visible, .icon-btn:focus-visible, .pad button:focus-visible,
+  .seg button:focus-visible, .garage-entry:focus-visible, .chip:focus-visible,
+  .g-nav:focus-visible, .g-back:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 3px;
+  }
+
+  /* меню: сложность и вход в гараж */
+  .menu-extra { display: flex; flex-direction: column; gap: 10px; }
+  .seg {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+  }
+  .seg button {
+    font: inherit;
+    font-weight: 700;
+    font-size: 12.5px;
+    line-height: 1.2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 2px 7px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .seg button small { font-size: 10px; font-weight: 600; opacity: 0.85; }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+  .diff-note { font-size: 12.5px; color: var(--muted); min-height: 1.3em; }
+
+  .garage-entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 6px 12px 6px 10px;
+    cursor: pointer;
+  }
+  .garage-entry:hover { border-color: var(--muted); }
+  #mini-car { width: 34px; height: 50px; flex: none; }
+  .garage-entry .meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+  .garage-entry b { font-size: 14px; }
+  .garage-entry small { font-size: 12px; color: var(--muted); }
+  .garage-entry .chev { color: var(--muted); font-size: 22px; line-height: 1; }
+
+  /* гараж */
+  .garage { width: min(100%, 320px); gap: 8px; padding: 12px 14px 14px; }
+  .g-head { display: flex; align-items: center; justify-content: space-between; }
+  .g-back {
+    font: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--muted);
+    background: none;
+    border: 0;
+    padding: 6px 6px 6px 0;
+    cursor: pointer;
+  }
+  .g-back:hover { color: var(--text); }
+  .wallet {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  .g-stage {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 4px 6px;
+  }
+  #g-canvas { width: 120px; height: 132px; }
+  .g-nav {
+    width: 40px;
+    height: 56px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .g-nav:hover { background: var(--line); }
+  .g-dots { display: flex; gap: 6px; justify-content: center; }
+  .g-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+  .g-dots i.on { background: var(--accent); }
+  .g-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .g-title h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .g-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .g-status.own { color: var(--good); }
+  .g-blurb { font-size: 12.5px; color: var(--muted); text-align: left; }
+  .g-stats { display: grid; gap: 6px; }
+  .g-row {
+    display: grid;
+    grid-template-columns: 84px 1fr 56px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: left;
+  }
+  .g-row b { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  .g-bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .g-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); }
+  .g-paint { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 12px 6px 8px;
+    cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { border-color: var(--accent); }
+  .chip .sw { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3); flex: none; }
+  .chip small { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .g-hint { font-size: 12.5px; color: var(--muted); min-height: 1.3em; }
+
+  .keys { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  kbd {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 1px 6px;
+  }
+
+  .pad { display: none; gap: 8px; }
+  .pad button {
+    flex: 1;
+    height: 58px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    border-radius: 16px;
+    font-size: 20px;
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  .pad button:active { background: var(--line); }
+  .pad button { -webkit-appearance: none; appearance: none; }
+  html, body { overscroll-behavior: none; }
+  .pad .gas { color: var(--accent); }
+
+  @media (max-width: 380px) {
+    .stats { gap: 8px; }
+    .stat b { font-size: 13px; }
+  }
+  @media (hover: none) and (pointer: coarse) {
+    :root { --reserve: 250px; }
+    .pad { display: flex; }
+    .keys { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn { transition: none; }
+  }
+</style>
+
+<main class="game">
+  <header class="bar">
+    <div class="stats">
+      <div class="stat"><span>Счёт</span><b id="score">0</b></div>
+      <div class="stat"><span>Км/ч</span><b id="speed">0</b></div>
+      <div class="stat"><span>Рекорд</span><b id="best">0</b></div>
+      <div class="stat"><span>Монеты</span><b id="coins">0</b></div>
+    </div>
+    <button class="icon-btn" id="pause-btn" type="button" aria-label="Пауза">❚❚</button>
+  </header>
+
+  <section class="board" id="board" aria-label="Дорога">
+    <canvas id="canvas"></canvas>
+    <div class="overlay" id="overlay">
+
+      <div class="card" id="card" data-tone="start">
+        <h2 id="ov-title">Трафик</h2>
+        <p class="lead" id="ov-lead">Веди точку и обгоняй вплотную</p>
+        <p class="hint" id="ov-hint"></p>
+        <p class="reward" id="ov-reward" hidden><i class="coin"></i><b id="ov-coins">+0</b><span id="ov-wallet"></span></p>
+        <div class="menu-extra" id="menu-extra">
+          <div class="seg" id="diff-seg" role="radiogroup" aria-label="Сложность"></div>
+          <p class="diff-note" id="diff-note"></p>
+          <button class="garage-entry" id="garage-open" type="button" aria-label="Открыть гараж">
+            <canvas id="mini-car"></canvas>
+            <span class="meta"><b id="mini-name"></b><small>Гараж и покупки</small></span>
+            <span class="chev" aria-hidden="true">›</span>
+          </button>
+        </div>
+        <button class="btn" id="ov-btn" type="button">Поехали</button>
+      </div>
+
+      <div class="card garage" id="garage" data-tone="start" hidden>
+        <div class="g-head">
+          <button class="g-back" id="g-back" type="button">‹ Назад</button>
+          <span class="wallet"><i class="coin"></i><b id="g-coins">0</b></span>
+        </div>
+        <div class="g-stage">
+          <button class="g-nav" id="g-prev" type="button" aria-label="Предыдущая машина">‹</button>
+          <canvas id="g-canvas"></canvas>
+          <button class="g-nav" id="g-next" type="button" aria-label="Следующая машина">›</button>
+        </div>
+        <div class="g-dots" id="g-dots" aria-hidden="true"></div>
+        <div class="g-title"><h3 id="g-name"></h3><span class="g-status" id="g-status"></span></div>
+        <p class="g-blurb" id="g-blurb"></p>
+        <div class="g-stats">
+          <div class="g-row"><span>Скорость</span><div class="g-bar"><i id="b-speed"></i></div><b id="v-speed"></b></div>
+          <div class="g-row"><span>Управление</span><div class="g-bar"><i id="b-turn"></i></div><b id="v-turn"></b></div>
+          <div class="g-row"><span>Доход</span><div class="g-bar"><i id="b-coin"></i></div><b id="v-coin"></b></div>
+        </div>
+        <div class="g-paint" id="g-paint"></div>
+        <button class="btn" id="g-action" type="button"></button>
+        <p class="g-hint" id="g-hint"></p>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="pad" aria-label="Управление">
+    <button type="button" data-act="left" aria-label="Точка влево">◀</button>
+    <button type="button" data-act="brake" aria-label="Тормоз">▼</button>
+    <button type="button" class="gas" data-act="gas" aria-label="Газ">▲</button>
+    <button type="button" data-act="right" aria-label="Точка вправо">▶</button>
+  </div>
+
+  <p class="keys">
+    <kbd>←</kbd><kbd>→</kbd> или <kbd>A</kbd><kbd>D</kbd> — двигают точку, машина едет за ней ·
+    <kbd>↑</kbd> газ · <kbd>↓</kbd> тормоз · <kbd>Пробел</kbd> — пауза
+  </p>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Настройки ----------
+  var LANE_W = 70, MARGIN = 25;    // ширина полосы и отступ дороги от края поля (в единицах поля)
+  var K = 3.2;                     // сколько единиц в секунду даёт 1 км/ч разницы скоростей
+  var COMBO_TIME = 2.5;            // секунд на следующий обгон, чтобы цепочка не прервалась
+  var NEAR = 28;                   // зазор между машинами, дальше которого очки не дают
+  var DOT_SPEED = 300;             // как быстро точка бегает по оси X
+  var COIN_RATE = 0.1;             // монет за одно очко обгона (до множителей)
+  var MAX_PARTS = 200, MAX_FLOATS = 12;   // потолок для искр и всплывающих надписей
+  var STORE_KEY = "traffic-profile-v1", OLD_BEST_KEY = "traffic-best";
+  var TRAFFIC_COLORS = ["#5b8def", "#dfe3ea", "#ef6a6a", "#8b93a5", "#4ec3a5", "#b58cf0"];
+  var GLASS = "#10151d";
+
+  // Сложность: число полос, скорость трафика по полосам (левая быстрее),
+  // множитель интервала появления машин (больше — реже), сколько полос сверху
+  // можно занять одновременно и множитель монет.
+  var DIFF_ORDER = ["easy", "normal", "hard"];
+  var DIFFS = {
+    easy:   { name: "Лёгкий",  sub: "3 полосы", lanes: 3, speeds: [86, 68, 50],
+              spawn: 2.0, maxBlock: 2, coin: 0.7, note: "Мало машин · монеты ×0.7" },
+    normal: { name: "Обычный", sub: "5 полос",  lanes: 5, speeds: [86, 76, 66, 58, 50],
+              spawn: 1.0, maxBlock: 3, coin: 1, note: "Средний трафик · монеты ×1" },
+    hard:   { name: "Сложный", sub: "7 полос",  lanes: 7, speeds: [86, 80, 74, 68, 62, 56, 50],
+              spawn: 0.6, maxBlock: 5, coin: 1.5, note: "Плотный трафик · монеты ×1.5" }
+  };
+
+  // Машины игрока. speed — прибавка к скорости (км/ч), turn — как быстро машина идёт за точкой,
+  // coin — множитель монет за обгон. livery — одна раскраска к машине.
+  var MODELS = [
+    { id: "hatch", name: "Городская", kind: "hatch", w: 40, h: 70, color: "#ffb020", price: 0,
+      speed: 0, turn: 1, coin: 1, blurb: "Ровная и предсказуемая. С неё все начинают.", livery: null },
+    { id: "coupe", name: "Купе", kind: "coupe", w: 40, h: 72, color: "#d83a56", price: 600,
+      speed: 4, turn: 1.15, coin: 1, blurb: "Охотнее слушается руля: машина быстрее догоняет точку.",
+      livery: { id: "gold", name: "Чёрное золото", color: "#20232b", price: 200,
+                swatch: "linear-gradient(90deg,#20232b 32%,#e9b44c 32% 68%,#20232b 68%)" } },
+    { id: "pickup", name: "Пикап", kind: "pickup", w: 46, h: 84, color: "#c9a14a", price: 1400,
+      speed: -4, turn: 0.9, coin: 1.35, blurb: "Тяжёлая и широкая, зато каждый обгон приносит больше монет.",
+      livery: { id: "camo", name: "Камуфляж", color: "#5f7a46", price: 400,
+                swatch: "radial-gradient(circle at 30% 30%,#8a9a62 0 30%,transparent 31%),radial-gradient(circle at 70% 66%,#2f3a22 0 32%,transparent 33%),#5f7a46" } },
+    { id: "sport", name: "Спорткар", kind: "sport", w: 42, h: 76, color: "#2f6bff", price: 3000,
+      speed: 8, turn: 1.25, coin: 1.1, blurb: "Быстрая и цепкая, но трафик подступает раньше.",
+      livery: { id: "race", name: "Гоночная", color: "#f1f2f5", price: 900,
+                swatch: "linear-gradient(90deg,#f1f2f5 30%,#d9302f 30% 70%,#f1f2f5 70%)" } },
+    { id: "hyper", name: "Гиперкар", kind: "hyper", w: 36, h: 80, color: "#8f4dff", price: 7500,
+      speed: 14, turn: 1.4, coin: 1.2, blurb: "Самая быстрая: узкий корпус и мгновенный отклик.",
+      livery: { id: "neon", name: "Неон", color: "#14161c", price: 2200,
+                swatch: "linear-gradient(90deg,#14161c 28%,#27e3c1 28% 40%,#14161c 40% 60%,#27e3c1 60% 72%,#14161c 72%)" } }
+  ];
+  function modelById(id) {
+    for (var i = 0; i < MODELS.length; i++) if (MODELS[i].id === id) return MODELS[i];
+    return MODELS[0];
+  }
+
+  // ---------- Цвета из CSS ----------
+  var css = getComputedStyle(document.documentElement);
+  function tok(n) { return css.getPropertyValue(n).trim(); }
+  var COL = {
+    shoulder: tok("--shoulder"), road: tok("--road"), edge: tok("--edge"), dash: tok("--dash"),
+    lamp: tok("--lamp"), accent: tok("--accent"), danger: tok("--danger"), bg: tok("--bg")
+  };
+
+  // ---------- Элементы ----------
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $("canvas"), ctx = canvas.getContext("2d");
+  var boardEl = $("board"), overlay = $("overlay"), card = $("card"), garagePanel = $("garage");
+  var scoreEl = $("score"), speedEl = $("speed"), bestEl = $("best"), coinsEl = $("coins"), pauseBtn = $("pause-btn");
+  var menuExtra = $("menu-extra"), rewardEl = $("ov-reward"), diffSeg = $("diff-seg"), diffNote = $("diff-note");
+  var miniCar = $("mini-car"), miniName = $("mini-name");
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function fmt(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+  // ---------- Сохранение: монеты, машины, сложность, рекорды ----------
+  // Всё хранится в localStorage этого браузера: на другом устройстве прогресс начнётся заново.
+  function loadProfile() {
+    var p = { coins: 0, owned: { hatch: 1 }, skins: {}, car: "hatch", skin: {}, diff: "normal",
+              best: { easy: 0, normal: 0, hard: 0 } };
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        var o = JSON.parse(raw) || {};
+        p.coins = Math.max(0, Math.floor(+o.coins || 0));
+        MODELS.forEach(function (m) {
+          if (o.owned && o.owned[m.id]) p.owned[m.id] = 1;
+          if (o.skins && o.skins[m.id]) p.skins[m.id] = 1;
+          if (o.skin && o.skin[m.id]) p.skin[m.id] = 1;
+        });
+        if (typeof o.car === "string") p.car = o.car;
+        if (typeof o.diff === "string") p.diff = o.diff;
+        DIFF_ORDER.forEach(function (k) { p.best[k] = Math.max(0, Math.floor(+(o.best && o.best[k]) || 0)); });
+      } else {
+        p.best.normal = parseInt(localStorage.getItem(OLD_BEST_KEY), 10) || 0;   // рекорд из прошлой версии
+      }
+    } catch (e) { /* хранилище недоступно */ }
+    if (!p.owned[p.car]) p.car = "hatch";
+    if (!DIFFS[p.diff]) p.diff = "normal";
+    return p;
+  }
+  var profile = loadProfile();
+  function saveProfile() { try { localStorage.setItem(STORE_KEY, JSON.stringify(profile)); } catch (e) { /* ничего */ } }
+
+  function equippedSkin(m) { return !!(m.livery && profile.owned[m.id] && profile.skins[m.id] && profile.skin[m.id]); }
+  function specFor(m, livery, player) {
+    var on = livery && m.livery;
+    return { kind: m.kind, w: m.w, h: m.h, color: on ? m.livery.color : m.color, livery: on ? m.livery.id : "", player: !!player };
+  }
+
+  // ---------- Состояние ----------
+  var state = "ready";             // ready | running | paused | crash | over
+  var D = DIFFS.normal, diffKey = "normal", model = MODELS[0], playerSpec;
+  var LANES, ROAD_W, ROAD_X, W, H, PY, RAIL_Y, PW, PH, DOT_MIN, DOT_MAX;
+  var best = 0;
+  var dot, px, tilt, v, t, scroll = 0;   // dot — точка на оси X, px — где сейчас машина
+  var cars, floats, parts;
+  var score, overtakes, runCoins, combo, comboT, spawnT, crashT, shake, newRecord;
+  var keys = { up: false, down: false, left: false, right: false };
+  var garageOpen = false, gIdx = 0, gSkin = 0;
+
+  function laneX(l) { return ROAD_X + LANE_W * (l + 0.5); }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  // Размеры поля зависят от числа полос: полоса всегда 70 единиц, а на широкой дороге
+  // поле «отъезжает» назад, чтобы всё помещалось. Высота остаётся в пропорции 5:8.
+  function applyLayout() {
+    LANES = D.lanes;
+    ROAD_W = LANES * LANE_W;
+    W = Math.max(400, ROAD_W + 2 * MARGIN);
+    H = W * 1.6;
+    ROAD_X = (W - ROAD_W) / 2;
+    PY = H - 140; RAIL_Y = H - 50;
+    PW = model.w; PH = model.h;
+    DOT_MIN = ROAD_X + PW / 2 + 4; DOT_MAX = ROAD_X + ROAD_W - PW / 2 - 4;
+  }
+
+  // Берём выбранные сложность и машину и готовим новую поездку.
+  function activate() {
+    diffKey = profile.diff; D = DIFFS[diffKey];
+    model = modelById(profile.car);
+    playerSpec = specFor(model, equippedSkin(model), true);
+    applyLayout();
+    reset();
+  }
+  // Пока мы в главном меню, дорога и машина сразу показывают выбор.
+  function refreshIdle() { if (state === "ready") activate(); }
+
+  function reset() {
+    dot = px = laneX(Math.floor(LANES / 2)); tilt = 0;
+    v = 100; t = 0;
+    cars = []; floats = []; parts = [];
+    score = 0; overtakes = 0; runCoins = 0; combo = 0; comboT = 0;
+    spawnT = 0.5; crashT = 0; shake = 0; newRecord = false;
+    updateHud();
+  }
+
+  function start() { garageOpen = false; activate(); setState("running"); }
+
+  function setState(s) {
+    state = s;
+    pauseBtn.textContent = s === "paused" ? "▶" : "❚❚";
+    renderOverlay();
+  }
+
+  function togglePause() {
+    if (state === "running") setState("paused");
+    else if (state === "paused") setState("running");
+  }
+
+  function updateHud() {
+    scoreEl.textContent = score;
+    speedEl.textContent = state === "ready" ? 0 : Math.round(v);
+    best = profile.best[profile.diff];
+    bestEl.textContent = best;
+    coinsEl.textContent = fmt(profile.coins);
+    var gc = $("g-coins"); if (gc) gc.textContent = fmt(profile.coins);
+  }
+
+  function giveCoins(n) {
+    profile.coins += n; runCoins += n;
+    saveProfile();
+    updateHud();
+  }
+
+  function renderOverlay() {
+    var title = $("ov-title"), lead = $("ov-lead"), hint = $("ov-hint"), btn = $("ov-btn");
+    var menu = state === "ready" || state === "over";
+    overlay.hidden = state === "running" || state === "crash";
+    card.hidden = garageOpen && menu;
+    garagePanel.hidden = !(garageOpen && menu);
+    menuExtra.hidden = !menu;
+    rewardEl.hidden = state !== "over";
+    if (state === "ready") {
+      card.dataset.tone = "start";
+      title.textContent = "Трафик";
+      lead.textContent = "Веди точку и обгоняй вплотную";
+      hint.textContent = "Очки дают только близкие обгоны: чем ближе к машине, тем больше. Очки превращаются в монеты.";
+      btn.textContent = "Поехали";
+    } else if (state === "paused") {
+      card.dataset.tone = "pause";
+      title.textContent = "Пауза";
+      lead.textContent = "Счёт: " + score;
+      hint.textContent = "Пробел — продолжить, R — заново";
+      btn.textContent = "Продолжить";
+    } else if (state === "over") {
+      card.dataset.tone = "over";
+      title.textContent = "Авария";
+      lead.textContent = "Счёт: " + score + (newRecord ? " · новый рекорд!" : "");
+      hint.textContent = "Обгонов вплотную: " + overtakes + " · рекорд: " + profile.best[diffKey];
+      $("ov-coins").textContent = "+" + fmt(runCoins);
+      $("ov-wallet").textContent = "на счету " + fmt(profile.coins);
+      btn.textContent = "Ещё раз";
+    }
+    if (menu) renderMenuExtra();
+  }
+
+  // ---------- Меню: сложность ----------
+  var segButtons = [];
+  DIFF_ORDER.forEach(function (key) {
+    var d = DIFFS[key], b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.dataset.diff = key;
+    var n = document.createElement("span"); n.textContent = d.name;
+    var s = document.createElement("small"); s.textContent = d.sub;
+    b.appendChild(n); b.appendChild(s);
+    b.addEventListener("click", function () { setDifficulty(key); b.blur(); });
+    diffSeg.appendChild(b);
+    segButtons.push(b);
+  });
+
+  function setDifficulty(key) {
+    if (!DIFFS[key] || profile.diff === key) return;
+    profile.diff = key;
+    saveProfile();
+    refreshIdle();
+    updateHud();
+    renderMenuExtra();
+  }
+
+  function renderMenuExtra() {
+    segButtons.forEach(function (b) { b.setAttribute("aria-checked", b.dataset.diff === profile.diff ? "true" : "false"); });
+    diffNote.textContent = DIFFS[profile.diff].note;
+    var m = modelById(profile.car);
+    miniName.textContent = m.name + (equippedSkin(m) ? " · " + m.livery.name : "");
+    renderPreview(miniCar, 34, 50, specFor(m, equippedSkin(m), true), 0.7, false);
+  }
+
+  // ---------- Трафик ----------
+  function spawnCar() {
+    // не больше maxBlock занятых полос в верхней части, чтобы всегда оставался проезд
+    var occupied = {}, n = 0;
+    cars.forEach(function (c) { if (c.y < 300 && !occupied[c.lane]) { occupied[c.lane] = 1; n++; } });
+    if (n >= D.maxBlock) return false;
+    var free = [];
+    for (var l = 0; l < LANES; l++) {
+      var busy = cars.some(function (c) { return c.lane === l && c.y - c.h / 2 < 60; });
+      if (!busy) free.push(l);
+    }
+    if (!free.length) return false;
+    var l2 = free[Math.floor(Math.random() * free.length)];
+    var truck = l2 >= Math.round(LANES * 0.6) && Math.random() < 0.25;   // грузовики едут в медленных полосах
+    var h = truck ? 110 : 70, w = truck ? 46 : 40;
+    var color = truck ? "#c9ced8" : TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)];
+    cars.push({
+      lane: l2, x: laneX(l2), y: -h, w: w, h: h, truck: truck,
+      s: D.speeds[l2],                         // в одной полосе скорость одинакова, поэтому машины не сталкиваются
+      spec: { kind: truck ? "truck" : "hatch", w: w, h: h, color: color, livery: "", player: false },
+      passed: false,
+      minGap: Infinity     // самый маленький зазор до нашей машины, пока они рядом по вертикали (то есть во время обгона)
+    });
+    return true;
+  }
+
+  function trimFx() {
+    if (parts.length > MAX_PARTS) parts.splice(0, parts.length - MAX_PARTS);
+    if (floats.length > MAX_FLOATS) floats.splice(0, floats.length - MAX_FLOATS);
+  }
+
+  // ---------- Обновление ----------
+  function update(dt) {
+    t += dt;
+
+    // скорость игрока: сама растёт со временем, газ и тормоз меняют её, машина добавляет своё
+    var base = 110 + Math.min(t, 150) * (90 / 150) + model.speed;
+    var target = base;
+    if (keys.up) target += 35;
+    if (keys.down) target = Math.max(95, base - 35);
+    v += (target - v) * Math.min(1, 2.2 * dt);
+    scroll += v * K * dt;
+
+    // точка на оси X: двигаем её стрелками, машина плавно едет за ней
+    dot = clamp(dot + ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * DOT_SPEED * model.turn * dt, DOT_MIN, DOT_MAX);
+    var prev = px;
+    px += (dot - px) * (1 - Math.exp(-16 * model.turn * dt));
+    tilt = clamp((px - prev) / Math.max(dt, 0.001) * 0.0016, -0.28, 0.28);
+
+    // новые машины
+    spawnT -= dt;
+    if (spawnT <= 0) {
+      var interval = (1.0 - 0.5 * Math.min(t / 150, 1)) * rand(0.8, 1.2) * D.spawn;
+      spawnT = spawnCar() ? interval : 0.15;
+    }
+
+    // машины, обгоны, столкновения
+    for (var i = cars.length - 1; i >= 0; i--) {
+      var c = cars[i];
+      c.y += (v - c.s) * K * dt;
+      if (c.y > H + 160 || c.y < -400) { cars.splice(i, 1); continue; }
+
+      // зазор между краями машин; запоминаем самый маленький, пока машины рядом по вертикали
+      var gap = Math.abs(c.x - px) - (c.w + PW) / 2;
+      if (Math.abs(c.y - PY) < (c.h + PH) / 2) c.minGap = Math.min(c.minGap, gap);
+
+      // обгон закончен, когда машина целиком осталась позади
+      if (!c.passed && c.y - c.h / 2 > PY + PH / 2) {
+        c.passed = true;
+        var gp = c.minGap;
+        var pts = gp < 10 ? 300 : gp < 20 ? 200 : gp <= NEAR ? 100 : 0;   // чем ближе, тем больше
+        var fx = clamp(px, 60, W - 60);
+        if (pts) {
+          combo = comboT > 0 ? Math.min(5, combo + 1) : 1;
+          comboT = COMBO_TIME;
+          pts *= combo;
+          score += pts; overtakes++;
+          giveCoins(Math.max(1, Math.round(pts * COIN_RATE * D.coin * model.coin)));
+          floats.push({ x: fx, y: PY - 50, text: "+" + pts + (combo > 1 ? " ×" + combo : ""),
+            sub: gp < 10 ? "ВПРИТЫК" : gp < 20 ? "близко" : "рядом", life: 1, color: COL.accent });
+          updateHud();
+        } else {
+          floats.push({ x: fx, y: PY - 50, text: "0", sub: "далеко", life: 0.8, color: "#8791a3" });
+        }
+        trimFx();
+      }
+
+      if (Math.abs(c.x - px) < (c.w + PW) / 2 - 6 && Math.abs(c.y - PY) < (c.h + PH) / 2 - 6) {
+        return crash(c);
+      }
+    }
+
+    if (comboT > 0) { comboT -= dt; if (comboT <= 0) { comboT = 0; combo = 0; } }
+    speedEl.textContent = Math.round(v);
+  }
+
+  function crash(c) {
+    state = "crash";
+    crashT = 0.9;
+    shake = reduceMotion ? 0 : 1;
+    var cx = (px + c.x) / 2, cy = (PY + c.y) / 2;
+    for (var i = 0; i < 26; i++) {
+      var a = Math.random() * Math.PI * 2, sp = rand(80, 360);
+      parts.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, max: rand(0.4, 0.9), size: rand(1.5, 3.5), color: "#ffb020", smoke: false });
+    }
+    for (var j = 0; j < 10; j++) {
+      parts.push({ x: cx + rand(-14, 14), y: cy + rand(-14, 14), vx: rand(-40, 40), vy: rand(-90, -20), life: 1, max: rand(0.8, 1.4), size: rand(8, 16), color: "#8791a3", smoke: true });
+    }
+    trimFx();
+    if (score > profile.best[diffKey]) { profile.best[diffKey] = score; newRecord = true; }
+    saveProfile();
+    updateHud();
+    renderOverlay();
+  }
+
+  function updateCrash(dt) {
+    crashT -= dt;
+    shake = Math.max(0, shake - dt * 2.5);
+    v = Math.max(0, v - 220 * dt);
+    scroll += v * K * dt;
+    tilt += 2.2 * dt;
+    cars.forEach(function (c) { c.y += (v - c.s) * K * dt; });
+    speedEl.textContent = Math.round(v);
+    if (crashT <= 0) setState("over");
+  }
+
+  function updateFx(dt) {
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.life -= dt / p.max;
+      if (p.life <= 0) parts.splice(i, 1);
+    }
+    for (var j = floats.length - 1; j >= 0; j--) {
+      var f = floats[j];
+      f.y -= 40 * dt; f.life -= dt * 0.9;
+      if (f.life <= 0) floats.splice(j, 1);
+    }
+  }
+
+  // ---------- Рисование машин ----------
+  // Каждая машина рисуется один раз в маленькую картинку (спрайт) и дальше только копируется.
+  // Так тени, свечение стоп-сигналов и градиенты не пересчитываются 60 раз в секунду.
+  function rrc(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+  function rr(x, y, w, h, r) { rrc(ctx, x, y, w, h, r); }
+
+  function bodyPath(c, kind, w, h) {
+    var x = w / 2, y = h / 2;
+    if (kind === "sport") {
+      c.beginPath();
+      c.moveTo(-w * 0.26, -y); c.lineTo(w * 0.26, -y);
+      c.quadraticCurveTo(x, -h * 0.38, x, -h * 0.16);
+      c.lineTo(x, h * 0.30);
+      c.quadraticCurveTo(x, y, w * 0.34, y);
+      c.lineTo(-w * 0.34, y);
+      c.quadraticCurveTo(-x, y, -x, h * 0.30);
+      c.lineTo(-x, -h * 0.16);
+      c.quadraticCurveTo(-x, -h * 0.38, -w * 0.26, -y);
+      c.closePath();
+    } else if (kind === "coupe") {
+      c.beginPath();
+      c.moveTo(-w * 0.32, -y); c.lineTo(w * 0.32, -y);
+      c.quadraticCurveTo(x, -y, x, -h * 0.36);
+      c.lineTo(x, h * 0.34);
+      c.quadraticCurveTo(x, y, w * 0.30, y);
+      c.lineTo(-w * 0.30, y);
+      c.quadraticCurveTo(-x, y, -x, h * 0.34);
+      c.lineTo(-x, -h * 0.36);
+      c.quadraticCurveTo(-x, -y, -w * 0.32, -y);
+      c.closePath();
+    } else if (kind === "hyper") {
+      var b = w * 0.28;                                   // половина ширины корпуса
+      c.beginPath();
+      c.moveTo(-b * 0.2, -y); c.lineTo(b * 0.2, -y);
+      c.quadraticCurveTo(b, -h * 0.38, b, -h * 0.14);
+      c.lineTo(b, h * 0.30);
+      c.quadraticCurveTo(b, y, b * 0.4, y);
+      c.lineTo(-b * 0.4, y);
+      c.quadraticCurveTo(-b, y, -b, h * 0.30);
+      c.lineTo(-b, -h * 0.14);
+      c.quadraticCurveTo(-b, -h * 0.38, -b * 0.2, -y);
+      c.closePath();
+    } else if (kind === "pickup") {
+      rrc(c, -x, -y, w, h, 8);
+    } else {
+      rrc(c, -x, -y, w, h, 10);
+    }
+  }
+
+  function wheels(c, spec) {
+    var w = spec.w, h = spec.h, k = spec.kind;
+    var ww = 6, wh = 16, wy = h * 0.26, out = 2;
+    if (k === "truck") wy = h * 0.3;
+    else if (k === "pickup") { ww = 7; wh = 18; wy = h * 0.28; }
+    else if (k === "sport") { ww = 7; wh = 17; wy = h * 0.27; }
+    else if (k === "hyper") { ww = 9; wh = 20; wy = h * 0.28; out = 0; }
+    c.fillStyle = "#07090c";
+    [[-w / 2 - out, -wy], [w / 2 + out - ww, -wy], [-w / 2 - out, wy], [w / 2 + out - ww, wy]].forEach(function (p) {
+      rrc(c, p[0], p[1] - wh / 2, ww, wh, 2); c.fill();
+    });
+  }
+
+  var CAMO = [[-0.22, -0.35, 0.2, 0.10, "#3f5230"], [0.25, -0.22, 0.18, 0.09, "#8a9a62"], [-0.2, -0.05, 0.17, 0.08, "#2f3a22"],
+              [0.22, 0.12, 0.2, 0.10, "#3f5230"], [-0.15, 0.3, 0.22, 0.09, "#8a9a62"], [0.2, 0.4, 0.18, 0.07, "#2f3a22"],
+              [0.02, -0.46, 0.15, 0.05, "#2f3a22"]];
+
+  // раскраска рисуется поверх кузова и обрезается по его контуру
+  function livery(c, spec) {
+    var w = spec.w, h = spec.h, y = h / 2;
+    c.save();
+    bodyPath(c, spec.kind, w, h);
+    c.clip();
+    if (spec.livery === "gold") {
+      c.fillStyle = "#e9b44c";
+      c.fillRect(-6, -y, 3.2, h); c.fillRect(2.8, -y, 3.2, h);
+    } else if (spec.livery === "camo") {
+      CAMO.forEach(function (b) {
+        c.fillStyle = b[4];
+        c.beginPath(); c.ellipse(b[0] * w, b[1] * h, b[2] * w, b[3] * h, 0.4, 0, Math.PI * 2); c.fill();
+      });
+    } else if (spec.livery === "race") {
+      c.fillStyle = "#1f3a8a";
+      c.fillRect(-7, -y, 2, h); c.fillRect(5, -y, 2, h);
+      c.fillStyle = "#d9302f";
+      c.fillRect(-5, -y, 10, h);
+      c.fillStyle = "#f1f2f5";
+      c.beginPath(); c.arc(0, -h * 0.30, 6, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "#1a1d24";
+      c.font = "700 9px system-ui, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText("7", 0, -h * 0.30 + 0.5);
+    } else if (spec.livery === "neon") {
+      var b = w * 0.28;
+      c.strokeStyle = "#27e3c1"; c.lineWidth = 1.4; c.lineCap = "round";
+      c.shadowColor = "#27e3c1"; c.shadowBlur = 6;
+      c.beginPath();
+      c.moveTo(-b * 0.55, -y * 0.7); c.lineTo(-b * 0.55, y * 0.55);
+      c.moveTo(b * 0.55, -y * 0.7); c.lineTo(b * 0.55, y * 0.55);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(-b * 0.5, -y + 12); c.lineTo(0, -y + 19); c.lineTo(b * 0.5, -y + 12);
+      c.stroke();
+      c.shadowBlur = 0;
+    }
+    c.restore();
+  }
+
+  function lights(c, spec) {
+    var w = spec.w, h = spec.h, x = w / 2, y = h / 2, k = spec.kind;
+    c.fillStyle = spec.player ? "#fff6d6" : "#d9d4bd";                  // фары спереди
+    if (k === "hyper") {
+      rrc(c, -x + 2, -y + 2, 6, 2.5, 1); c.fill(); rrc(c, x - 8, -y + 2, 6, 2.5, 1); c.fill();
+    } else if (k === "sport") {
+      rrc(c, -w * 0.26 + 1, -y + 1, 7, 3, 1.5); c.fill(); rrc(c, w * 0.26 - 8, -y + 1, 7, 3, 1.5); c.fill();
+    } else if (k === "coupe") {
+      rrc(c, -x + 5, -y + 1, 9, 3.5, 2); c.fill(); rrc(c, x - 14, -y + 1, 9, 3.5, 2); c.fill();
+    } else {
+      rrc(c, -x + 3, -y + 1, 9, 4, 2); c.fill(); rrc(c, x - 12, -y + 1, 9, 4, 2); c.fill();
+    }
+    c.shadowColor = "#ff3b3b";                                          // стоп-сигналы сзади
+    c.shadowBlur = spec.player ? 14 : 8;
+    c.fillStyle = "#ff4545";
+    if (k === "hyper") {
+      rrc(c, -6, y - 4, 12, 2.5, 1); c.fill();
+    } else if (k === "sport") {
+      rrc(c, -w * 0.34 + 1, y - 5, 8, 3, 1.5); c.fill(); rrc(c, w * 0.34 - 9, y - 5, 8, 3, 1.5); c.fill();
+    } else if (k === "coupe") {
+      rrc(c, -x + 5, y - 5, 9, 4, 2); c.fill(); rrc(c, x - 14, y - 5, 9, 4, 2); c.fill();
+    } else {
+      rrc(c, -x + 3, y - 5, 9, 4, 2); c.fill(); rrc(c, x - 12, y - 5, 9, 4, 2); c.fill();
+    }
+    c.shadowBlur = 0;
+  }
+
+  // Рисует машину вокруг точки (0, 0): нос вверх.
+  function paintCar(c, spec) {
+    var w = spec.w, h = spec.h, x = w / 2, y = h / 2, kind = spec.kind, i;
+
+    c.fillStyle = "rgba(0,0,0,0.35)";                                   // тень
+    c.save(); c.translate(3, 5); bodyPath(c, kind, w, h); c.fill(); c.restore();
+
+    wheels(c, spec);
+
+    c.fillStyle = spec.color;                                           // кузов
+    bodyPath(c, kind, w, h); c.fill();
+    if (spec.livery) livery(c, spec);
+
+    if (kind === "truck") {
+      c.fillStyle = "#e9ecf1";                                          // прицеп
+      rrc(c, -x + 2, -y + h * 0.3, w - 4, h * 0.68, 5); c.fill();
+      c.fillStyle = "rgba(0,0,0,0.12)";
+      for (i = 1; i < 5; i++) c.fillRect(-x + 4, -y + h * 0.3 + i * h * 0.12, w - 8, 2);
+      c.fillStyle = GLASS;
+      rrc(c, -x + 6, -y + 8, w - 12, h * 0.12, 4); c.fill();
+    } else if (kind === "coupe") {
+      c.fillStyle = GLASS;
+      rrc(c, -x + 5, -h * 0.23, w - 10, h * 0.14, 5); c.fill();         // лобовое
+      rrc(c, -x + 6, h * 0.11, w - 12, h * 0.11, 5); c.fill();          // заднее
+      c.fillStyle = "rgba(255,255,255,0.12)";
+      rrc(c, -x + 6, -h * 0.07, w - 12, h * 0.17, 5); c.fill();         // крыша
+      c.fillStyle = "rgba(0,0,0,0.2)";
+      c.fillRect(-6, -y + 6, 1.5, h * 0.2); c.fillRect(4.5, -y + 6, 1.5, h * 0.2);   // складки капота
+    } else if (kind === "pickup") {
+      c.fillStyle = GLASS;
+      rrc(c, -x + 5, -h * 0.31, w - 10, h * 0.11, 4); c.fill();         // лобовое
+      rrc(c, -x + 6, -h * 0.02, w - 12, h * 0.07, 3); c.fill();         // заднее окно кабины
+      c.fillStyle = "rgba(255,255,255,0.14)";
+      rrc(c, -x + 5, -h * 0.19, w - 10, h * 0.16, 4); c.fill();         // крыша кабины
+      c.fillStyle = "#12161d";                                          // кузов с рёбрами
+      rrc(c, -x + 4, h * 0.09, w - 8, h * 0.34, 3); c.fill();
+      c.fillStyle = "rgba(255,255,255,0.08)";
+      for (i = 1; i < 4; i++) c.fillRect(-x + 5, h * 0.09 + i * h * 0.34 / 4 - 0.5, w - 10, 1.2);
+    } else if (kind === "sport") {
+      c.fillStyle = GLASS;
+      rrc(c, -x + 8, -h * 0.20, w - 16, h * 0.14, 6); c.fill();         // лобовое
+      rrc(c, -x + 9, h * 0.07, w - 18, h * 0.10, 5); c.fill();          // заднее
+      c.fillStyle = "rgba(255,255,255,0.13)";
+      rrc(c, -x + 8, -h * 0.05, w - 16, h * 0.13, 4); c.fill();         // крыша
+      c.fillStyle = "rgba(0,0,0,0.38)";
+      rrc(c, -x + 1.5, -h * 0.06, 4.5, 11, 2); c.fill();                // воздухозаборники
+      rrc(c, x - 6, -h * 0.06, 4.5, 11, 2); c.fill();
+      c.fillStyle = GLASS;
+      rrc(c, -x + 2, y - 10, w - 4, 5, 2); c.fill();                    // спойлер
+    } else if (kind === "hyper") {
+      c.fillStyle = GLASS;
+      rrc(c, -x, -y, w, 7, 2); c.fill();                                // переднее крыло
+      rrc(c, -x + 3, y - 14, w - 6, 7, 2); c.fill();                    // заднее крыло
+      c.fillStyle = spec.livery === "neon" ? "#27e3c1" : spec.color;
+      c.fillRect(-x + 1, -y + 1, w - 2, 1.4); c.fillRect(-x + 4, y - 13, w - 8, 1.4);
+      c.fillStyle = GLASS;
+      rrc(c, -4, -h * 0.12, 8, h * 0.2, 4); c.fill();                   // кокпит
+      c.fillStyle = "#e9e7e1";
+      c.beginPath(); c.arc(0, -h * 0.02, 2.4, 0, Math.PI * 2); c.fill();   // шлем
+    } else {
+      c.fillStyle = GLASS;                                              // лобовое и заднее стекло
+      rrc(c, -x + 5, -h * 0.24, w - 10, h * 0.16, 4); c.fill();
+      rrc(c, -x + 6, h * 0.13, w - 12, h * 0.12, 4); c.fill();
+      c.fillStyle = "rgba(255,255,255,0.14)";                           // крыша
+      rrc(c, -x + 5, -h * 0.07, w - 10, h * 0.2, 5); c.fill();
+    }
+
+    lights(c, spec);
+  }
+
+  // ---------- Кэш спрайтов ----------
+  var cw = 1, ch = 1;
+  var cache = {}, cacheScale = 0;
+  function cached(key, w, h, pad, paint) {
+    var s = cw / W;
+    if (s !== cacheScale) { cache = {}; cacheScale = s; }     // масштаб изменился: рисуем заново
+    var e = cache[key];
+    if (!e) {
+      var cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.ceil((w + pad * 2) * s));
+      cv.height = Math.max(1, Math.ceil((h + pad * 2) * s));
+      var c2 = cv.getContext("2d");
+      c2.scale(s, s);
+      c2.translate(w / 2 + pad, h / 2 + pad);
+      paint(c2);
+      e = cache[key] = { cv: cv, w: cv.width / s, h: cv.height / s, ox: w / 2 + pad, oy: h / 2 + pad };
+    }
+    return e;
+  }
+  function carSprite(spec) {
+    var key = spec.kind + "|" + spec.w + "|" + spec.h + "|" + spec.color + "|" + spec.livery + "|" + (spec.player ? 1 : 0);
+    return cached(key, spec.w, spec.h, 20, function (c2) { paintCar(c2, spec); });
+  }
+  function blit(e, x, y, rot) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (rot) ctx.rotate(rot);
+    ctx.drawImage(e.cv, -e.ox, -e.oy, e.w, e.h);
+    ctx.restore();
+  }
+  function lampGlow() {
+    return cached("lamp", 0, 0, 70, function (c2) {
+      var g = c2.createRadialGradient(0, 0, 0, 0, 0, 70);
+      g.addColorStop(0, "rgba(255,207,112,0.16)");
+      g.addColorStop(1, "rgba(255,207,112,0)");
+      c2.fillStyle = g;
+      c2.fillRect(-70, -70, 140, 140);
+    });
+  }
+
+  // Превью машины в меню и гараже
+  function renderPreview(cv, cssW, cssH, spec, maxScale, glow) {
+    var dpr = Math.min(3, window.devicePixelRatio || 1);
+    var pw = Math.round(cssW * dpr), ph = Math.round(cssH * dpr);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    var c2 = cv.getContext("2d");
+    c2.setTransform(1, 0, 0, 1, 0, 0);
+    c2.clearRect(0, 0, pw, ph);
+    if (glow) {
+      c2.setTransform(dpr, 0, 0, dpr, pw / 2, ph / 2);
+      var g = c2.createRadialGradient(0, 0, 0, 0, 0, cssW * 0.6);
+      g.addColorStop(0, "rgba(255,176,32,0.16)");
+      g.addColorStop(1, "rgba(255,176,32,0)");
+      c2.fillStyle = g;
+      c2.fillRect(-cssW / 2, -cssH / 2, cssW, cssH);
+    }
+    var sc = Math.min(maxScale, (cssH - 12) / spec.h);
+    c2.setTransform(dpr * sc, 0, 0, dpr * sc, pw / 2, ph / 2);
+    paintCar(c2, spec);
+  }
+
+  // ---------- Отрисовка ----------
+  function resize() {
+    var r = boardEl.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    cw = Math.max(1, Math.round(r.width * dpr));
+    ch = Math.max(1, Math.round(r.height * dpr));
+    canvas.width = cw; canvas.height = ch;
+  }
+
+  function lamp(x, y) {
+    var g = lampGlow();
+    ctx.drawImage(g.cv, x - g.ox, y - g.oy, g.w, g.h);
+    ctx.fillStyle = COL.lamp;
+    ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill();
+  }
+
+  function drawRoad() {
+    ctx.fillStyle = COL.shoulder;
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    ctx.fillStyle = COL.road;
+    ctx.fillRect(ROAD_X, -20, ROAD_W, H + 40);
+    ctx.fillStyle = COL.edge;
+    ctx.fillRect(ROAD_X - 2, -20, 3, H + 40);
+    ctx.fillRect(ROAD_X + ROAD_W - 1, -20, 3, H + 40);
+
+    ctx.fillStyle = COL.dash;
+    ctx.globalAlpha = 0.75;
+    var period = 72, off = scroll % period;
+    for (var l = 1; l < LANES; l++) {
+      var x = ROAD_X + l * LANE_W - 1.5;
+      for (var y = -period + off; y < H; y += period) ctx.fillRect(x, y, 3, 36);
+    }
+    ctx.globalAlpha = 1;
+
+    var lp = 170, lo = scroll % lp;
+    for (var yy = -lp + lo; yy < H + lp; yy += lp) { lamp(ROAD_X - 14, yy); lamp(ROAD_X + ROAD_W + 14, yy); }
+  }
+
+  function draw() {
+    var s = cw / W, ts = W / 400;       // ts: подписи не должны уменьшаться на широкой дороге
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.save();
+    if (shake > 0) ctx.translate(rand(-1, 1) * shake * 7, rand(-1, 1) * shake * 7);
+
+    drawRoad();
+
+    // свет фар игрока
+    var topY = PY - PH / 2;
+    var g = ctx.createLinearGradient(0, topY, 0, topY - 210);
+    g.addColorStop(0, "rgba(255,236,190,0.24)");
+    g.addColorStop(1, "rgba(255,236,190,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(px - 14, topY); ctx.lineTo(px + 14, topY);
+    ctx.lineTo(px + 64, topY - 210); ctx.lineTo(px - 64, topY - 210);
+    ctx.closePath(); ctx.fill();
+
+    // ось X: рельса внизу и нить от точки к машине
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(255,255,255,0.16)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ROAD_X + 10, RAIL_Y); ctx.lineTo(ROAD_X + ROAD_W - 10, RAIL_Y); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    for (var li = 0; li < LANES; li++) ctx.fillRect(laneX(li) - 1, RAIL_Y - 4, 2, 8);
+    ctx.strokeStyle = "rgba(255,176,32,0.3)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(dot, RAIL_Y); ctx.lineTo(px, PY + PH / 2); ctx.stroke();
+
+    cars.forEach(function (c) { blit(carSprite(c.spec), c.x, c.y, 0); });
+    blit(carSprite(playerSpec), px, PY, tilt);
+
+    // сама точка-руль
+    ctx.fillStyle = "rgba(255,176,32,0.22)";
+    ctx.beginPath(); ctx.arc(dot, RAIL_Y, 14, 0, 7); ctx.fill();
+    ctx.fillStyle = COL.accent;
+    ctx.beginPath(); ctx.arc(dot, RAIL_Y, 7, 0, 7); ctx.fill();
+
+    parts.forEach(function (p) {
+      ctx.globalAlpha = Math.max(0, p.life) * (p.smoke ? 0.5 : 1);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.smoke ? p.size * (2 - p.life) : p.size * p.life, 0, 7);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // дальность: верх дороги плавно уходит в темноту
+    var fade = ctx.createLinearGradient(0, 0, 0, 170);
+    fade.addColorStop(0, COL.bg);
+    fade.addColorStop(1, "rgba(11,14,19,0)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(-20, -20, W + 40, 190);
+
+    // всплывающие очки
+    ctx.textAlign = "center";
+    floats.forEach(function (f) {
+      ctx.globalAlpha = Math.min(1, f.life * 1.6);
+      ctx.fillStyle = f.color;
+      ctx.font = "700 " + 17 * ts + "px Unbounded, system-ui, sans-serif";
+      ctx.fillText(f.text, f.x, f.y);
+      if (f.sub) {
+        ctx.font = "700 " + 10 * ts + "px Manrope, system-ui, sans-serif";
+        ctx.fillText(f.sub.toUpperCase(), f.x, f.y - 21 * ts);
+      }
+    });
+    ctx.globalAlpha = 1;
+
+    // комбо
+    if (combo > 1 && state === "running") {
+      ctx.font = "800 " + 13 * ts + "px Unbounded, system-ui, sans-serif";
+      ctx.fillStyle = COL.accent;
+      ctx.fillText("КОМБО ×" + combo, W / 2, 30 * ts);
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      rr(W / 2 - 50 * ts, 38 * ts, 100 * ts, 5 * ts, 2.5 * ts); ctx.fill();
+      ctx.fillStyle = COL.accent;
+      rr(W / 2 - 50 * ts, 38 * ts, 100 * ts * (comboT / COMBO_TIME), 5 * ts, 2.5 * ts); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ---------- Цикл ----------
+  var last = 0;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000 || 0);
+    last = now;
+    if (state === "running") update(dt);
+    else if (state === "crash") updateCrash(dt);
+    else if (state === "ready") scroll += 70 * K * dt;
+    updateFx(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Гараж ----------
+  var gName = $("g-name"), gStatus = $("g-status"), gBlurb = $("g-blurb"), gPaint = $("g-paint");
+  var gAction = $("g-action"), gHint = $("g-hint"), gDots = $("g-dots"), gCanvas = $("g-canvas");
+
+  function openGarage() {
+    var m = modelById(profile.car);
+    gIdx = MODELS.indexOf(m);
+    gSkin = equippedSkin(m) ? 1 : 0;
+    garageOpen = true;
+    renderOverlay();
+    renderGarage();
+  }
+  function closeGarage() {
+    garageOpen = false;
+    refreshIdle();
+    renderOverlay();
+  }
+  function gStep(d) {
+    gIdx = (gIdx + d + MODELS.length) % MODELS.length;
+    var m = MODELS[gIdx];
+    gSkin = equippedSkin(m) ? 1 : 0;
+    renderGarage();
+  }
+
+  function setBar(id, frac, text) {
+    $("b-" + id).style.width = Math.round(clamp(frac, 0.04, 1) * 100) + "%";
+    $("v-" + id).textContent = text;
+  }
+
+  function renderGarage() {
+    var m = MODELS[gIdx], lv = m.livery, owned = !!profile.owned[m.id];
+    if (!lv) gSkin = 0;
+    var skinOwned = !!(lv && profile.skins[m.id]);
+
+    renderPreview(gCanvas, 120, 132, specFor(m, !!gSkin, true), 1.6, true);
+
+    gDots.innerHTML = "";
+    MODELS.forEach(function (mm, i) {
+      var d = document.createElement("i");
+      if (i === gIdx) d.className = "on";
+      gDots.appendChild(d);
+    });
+
+    gName.textContent = m.name;
+    gStatus.className = "g-status" + (owned ? " own" : "");
+    if (owned) gStatus.textContent = "В гараже";
+    else { gStatus.innerHTML = '<i class="coin"></i>' + fmt(m.price); }
+    gBlurb.textContent = m.blurb;
+
+    setBar("speed", (m.speed + 6) / 22, (m.speed > 0 ? "+" : m.speed < 0 ? "−" : "±") + Math.abs(m.speed));
+    setBar("turn", (m.turn - 0.8) / 0.7, "×" + m.turn);
+    setBar("coin", (m.coin - 0.9) / 0.6, "×" + m.coin);
+
+    gPaint.hidden = !lv;
+    gPaint.innerHTML = "";
+    if (lv) {
+      [0, 1].forEach(function (i) {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "chip";
+        b.setAttribute("aria-pressed", gSkin === i ? "true" : "false");
+        var sw = document.createElement("span"); sw.className = "sw"; sw.style.background = i ? lv.swatch : m.color;
+        var tx = document.createElement("span"); tx.textContent = i ? lv.name : "Заводская";
+        b.appendChild(sw); b.appendChild(tx);
+        if (i && !skinOwned) { var pr = document.createElement("small"); pr.textContent = "· " + fmt(lv.price); b.appendChild(pr); }
+        b.addEventListener("click", function () { gSkin = i; renderGarage(); });
+        gPaint.appendChild(b);
+      });
+    }
+
+    var equipped = profile.car === m.id && owned && (equippedSkin(m) ? 1 : 0) === gSkin;
+    var need = 0;
+    gAction.className = "btn";
+    gHint.textContent = "";
+    if (!owned) {
+      need = m.price - profile.coins;
+      gAction.textContent = "Купить за " + fmt(m.price);
+      gAction.disabled = need > 0;
+      if (need > 0) gHint.textContent = "Не хватает " + fmt(need) + " монет";
+    } else if (gSkin && !skinOwned) {
+      need = lv.price - profile.coins;
+      gAction.textContent = "Купить окраску за " + fmt(lv.price);
+      gAction.disabled = need > 0;
+      if (need > 0) gHint.textContent = "Не хватает " + fmt(need) + " монет";
+    } else if (equipped) {
+      gAction.textContent = "Выбрана";
+      gAction.className = "btn equipped";
+      gAction.disabled = true;
+    } else {
+      gAction.textContent = "Выбрать";
+      gAction.disabled = false;
+    }
+  }
+
+  function onGarageAction() {
+    var m = MODELS[gIdx], lv = m.livery;
+    if (!profile.owned[m.id]) {
+      if (profile.coins < m.price) return;
+      profile.coins -= m.price;
+      profile.owned[m.id] = 1; profile.car = m.id; profile.skin[m.id] = 0;
+    } else if (gSkin && lv && !profile.skins[m.id]) {
+      if (profile.coins < lv.price) return;
+      profile.coins -= lv.price;
+      profile.skins[m.id] = 1; profile.car = m.id; profile.skin[m.id] = 1;
+    } else {
+      profile.car = m.id; profile.skin[m.id] = gSkin;
+    }
+    saveProfile();
+    refreshIdle();
+    updateHud();
+    renderGarage();
+  }
+
+  $("garage-open").addEventListener("click", openGarage);
+  $("g-back").addEventListener("click", closeGarage);
+  $("g-prev").addEventListener("click", function () { gStep(-1); });
+  $("g-next").addEventListener("click", function () { gStep(1); });
+  gAction.addEventListener("click", onGarageAction);
+
+  // ---------- Ввод ----------
+  // игра стартует по первому нажатию управления
+  function wake() { if (state === "ready" && !garageOpen) start(); }
+
+  var KEY_LEFT = { ArrowLeft: 1, KeyA: 1 }, KEY_RIGHT = { ArrowRight: 1, KeyD: 1 };
+  var KEY_UP = { ArrowUp: 1, KeyW: 1 }, KEY_DOWN = { ArrowDown: 1, KeyS: 1 };
+
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var c = e.code;
+    if (garageOpen) {                      // в гараже стрелки листают машины, игра не стартует
+      if (KEY_LEFT[c]) { e.preventDefault(); gStep(-1); }
+      else if (KEY_RIGHT[c]) { e.preventDefault(); gStep(1); }
+      else if (c === "Escape") closeGarage();
+      return;
+    }
+    if (KEY_LEFT[c]) { e.preventDefault(); keys.left = true; wake(); }
+    else if (KEY_RIGHT[c]) { e.preventDefault(); keys.right = true; wake(); }
+    else if (KEY_UP[c]) { e.preventDefault(); keys.up = true; wake(); }
+    else if (KEY_DOWN[c]) { e.preventDefault(); keys.down = true; }
+    else if (c === "Space") {
+      e.preventDefault();
+      if (state === "ready" || state === "over") start(); else togglePause();
+    } else if (c === "Enter") {
+      if (document.activeElement && document.activeElement.tagName === "BUTTON") return;
+      if (state === "ready" || state === "over") start(); else if (state === "paused") togglePause();
+    } else if (c === "KeyP") togglePause();
+    else if (c === "KeyR") start();
+  });
+  document.addEventListener("keyup", function (e) {
+    if (KEY_UP[e.code]) keys.up = false;
+    if (KEY_DOWN[e.code]) keys.down = false;
+    if (KEY_LEFT[e.code]) keys.left = false;
+    if (KEY_RIGHT[e.code]) keys.right = false;
+  });
+  window.addEventListener("blur", function () { keys.up = keys.down = keys.left = keys.right = false; });
+
+  $("ov-btn").addEventListener("click", function () {
+    if (state === "paused") togglePause(); else start();
+  });
+  pauseBtn.addEventListener("click", function () {
+    if (state === "ready" || state === "over") start(); else togglePause();
+  });
+
+  // кнопки на телефоне
+  document.querySelectorAll(".pad button").forEach(function (b) {
+    var act = b.dataset.act;
+    // iPhone: без этого долгое нажатие запускает выделение и лупу
+    b.addEventListener("touchstart", function (e) { e.preventDefault(); }, { passive: false });
+    b.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      if (act === "left") { keys.left = true; wake(); }
+      else if (act === "right") { keys.right = true; wake(); }
+      else if (act === "gas") { keys.up = true; wake(); }
+      else if (act === "brake") keys.down = true;
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+      b.addEventListener(ev, function () {
+        if (act === "gas") keys.up = false;
+        if (act === "brake") keys.down = false;
+        if (act === "left") keys.left = false;
+        if (act === "right") keys.right = false;
+      });
+    });
+  });
+
+  // перетаскивание по полю пальцем или мышью: точка двигается вслед за движением
+  var dragX = 0, dragDot = 0, dragging = false;
+  boardEl.addEventListener("pointerdown", function (e) { dragging = true; dragX = e.clientX; dragDot = dot; });
+  boardEl.addEventListener("pointermove", function (e) {
+    if (!dragging || state !== "running") return;
+    var k = W / boardEl.getBoundingClientRect().width;        // из пикселей экрана в координаты поля
+    dot = clamp(dragDot + (e.clientX - dragX) * k * 1.6, DOT_MIN, DOT_MAX);
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(function (ev) {
+    boardEl.addEventListener(ev, function () { dragging = false; });
+  });
+
+  // долгое нажатие на телефоне не открывает контекстное меню
+  document.querySelector(".game").addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && state === "running") setState("paused");
+  });
+
+  // ---------- Старт ----------
+  new ResizeObserver(resize).observe(boardEl);
+  resize();
+  activate();
+  renderOverlay();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>
